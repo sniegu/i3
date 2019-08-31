@@ -140,6 +140,8 @@ static const int tray_loff_px = 2;
 /* Vertical offset between the bar and a separator */
 static const int sep_voff_px = 4;
 
+static const int width_spacing = 128;
+
 int _xcb_request_failed(xcb_void_cookie_t cookie, char *err_msg, int line) {
     xcb_generic_error_t *err;
     if ((err = xcb_request_check(xcb_connection, cookie)) != NULL) {
@@ -374,12 +376,12 @@ static void unhide_bars(void) {
                XCB_CONFIG_WINDOW_WIDTH |
                XCB_CONFIG_WINDOW_HEIGHT |
                XCB_CONFIG_WINDOW_STACK_MODE;
-        values[0] = walk->rect.x;
+        values[0] = walk->rect.x + width_spacing;
         if (config.position == POS_TOP)
             values[1] = walk->rect.y;
         else
             values[1] = walk->rect.y + walk->rect.h - bar_height;
-        values[2] = walk->rect.w;
+        values[2] = walk->rect.w - 2 * width_spacing;
         values[3] = bar_height;
         values[4] = XCB_STACK_MODE_ABOVE;
         DLOG("Reconfiguring window for output %s to %d,%d\n", walk->name, values[0], values[1]);
@@ -545,7 +547,7 @@ static void handle_button(xcb_button_press_event_t *event) {
         /* Calculate the horizontal coordinate (x) of the start of the
          * statusline by subtracting its width and the width of the tray from
          * the bar width. */
-        const int offset = walk->rect.w - walk->statusline_width -
+        const int offset = walk->rect.w - 2 * width_spacing - walk->statusline_width -
                            tray_width - logical_px((tray_width > 0) * sb_hoff_px);
         if (x >= offset) {
             /* Click was after the start of the statusline, return to avoid
@@ -703,8 +705,8 @@ static void configure_trayclients(void) {
             clients++;
 
             DLOG("Configuring tray window %08x to x=%d\n",
-                 trayclient->win, output->rect.w - (clients * (icon_size + logical_px(config.tray_padding))));
-            uint32_t x = output->rect.w - (clients * (icon_size + logical_px(config.tray_padding)));
+                 trayclient->win, output->rect.w - 2 * width_spacing - (clients * (icon_size + logical_px(config.tray_padding))));
+            uint32_t x = output->rect.w - 2 * width_spacing - (clients * (icon_size + logical_px(config.tray_padding)));
             xcb_configure_window(xcb_connection,
                                  trayclient->win,
                                  XCB_CONFIG_WINDOW_X,
@@ -800,7 +802,7 @@ static void handle_client_message(xcb_client_message_event_t *event) {
             xcb_void_cookie_t rcookie = xcb_reparent_window(xcb_connection,
                                                             client,
                                                             output_for_tray->bar.id,
-                                                            output_for_tray->rect.w - icon_size - logical_px(config.tray_padding),
+                                                            output_for_tray->rect.w - 2 * width_spacing - icon_size - logical_px(config.tray_padding),
                                                             logical_px(config.tray_padding));
             if (xcb_request_failed(rcookie, "Could not reparent window. Maybe it is using an incorrect depth/visual?"))
                 return;
@@ -1042,7 +1044,7 @@ static void handle_configuration_change(xcb_window_t window) {
                 continue;
 
             xcb_rectangle_t rect;
-            rect.x = output->rect.w - (clients * (icon_size + logical_px(config.tray_padding)));
+            rect.x = output->rect.w - 2 * width_spacing - (clients * (icon_size + logical_px(config.tray_padding)));
             rect.y = logical_px(config.tray_padding);
             rect.width = icon_size;
             rect.height = icon_size;
@@ -1606,13 +1608,13 @@ static xcb_void_cookie_t config_strut_partial(i3_output *output) {
             break;
         case POS_TOP:
             strut_partial.top = bar_height;
-            strut_partial.top_start_x = output->rect.x;
-            strut_partial.top_end_x = output->rect.x + output->rect.w;
+            strut_partial.top_start_x = output->rect.x + width_spacing;
+            strut_partial.top_end_x = output->rect.x + output->rect.w - width_spacing;
             break;
         case POS_BOT:
             strut_partial.bottom = bar_height;
-            strut_partial.bottom_start_x = output->rect.x;
-            strut_partial.bottom_end_x = output->rect.x + output->rect.w;
+            strut_partial.bottom_start_x = output->rect.x + width_spacing;
+            strut_partial.bottom_end_x = output->rect.x + output->rect.w - width_spacing;
             break;
     }
     return xcb_change_property(xcb_connection,
@@ -1727,8 +1729,8 @@ void reconfig_windows(bool redraw_bars) {
                                                                      depth,
                                                                      bar_id,
                                                                      xcb_root,
-                                                                     walk->rect.x, walk->rect.y + walk->rect.h - bar_height,
-                                                                     walk->rect.w, bar_height,
+                                                                     walk->rect.x + width_spacing, walk->rect.y + walk->rect.h - bar_height,
+                                                                     walk->rect.w - 2 * width_spacing, bar_height,
                                                                      0,
                                                                      XCB_WINDOW_CLASS_INPUT_OUTPUT,
                                                                      visual_type->visual_id,
@@ -1740,7 +1742,7 @@ void reconfig_windows(bool redraw_bars) {
                                                                     depth,
                                                                     buffer_id,
                                                                     bar_id,
-                                                                    walk->rect.w,
+                                                                    walk->rect.w - 2 * width_spacing,
                                                                     bar_height);
 
             /* The double-buffer we use to render the statusline before copying to buffer */
@@ -1748,7 +1750,7 @@ void reconfig_windows(bool redraw_bars) {
                                                                       depth,
                                                                       statusline_buffer_id,
                                                                       bar_id,
-                                                                      walk->rect.w,
+                                                                      walk->rect.w - 2 * width_spacing,
                                                                       bar_height);
 
             /* Set the WM_CLASS and WM_NAME (we don't need UTF-8) atoms */
@@ -1786,9 +1788,9 @@ void reconfig_windows(bool redraw_bars) {
                                                                 1,
                                                                 (unsigned char *)&atoms[_NET_WM_WINDOW_TYPE_DOCK]);
 
-            draw_util_surface_init(xcb_connection, &walk->bar, bar_id, NULL, walk->rect.w, bar_height);
-            draw_util_surface_init(xcb_connection, &walk->buffer, buffer_id, NULL, walk->rect.w, bar_height);
-            draw_util_surface_init(xcb_connection, &walk->statusline_buffer, statusline_buffer_id, NULL, walk->rect.w, bar_height);
+            draw_util_surface_init(xcb_connection, &walk->bar, bar_id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
+            draw_util_surface_init(xcb_connection, &walk->buffer, buffer_id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
+            draw_util_surface_init(xcb_connection, &walk->statusline_buffer, statusline_buffer_id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
 
             xcb_void_cookie_t strut_cookie = config_strut_partial(walk);
 
@@ -1816,12 +1818,12 @@ void reconfig_windows(bool redraw_bars) {
                    XCB_CONFIG_WINDOW_WIDTH |
                    XCB_CONFIG_WINDOW_HEIGHT |
                    XCB_CONFIG_WINDOW_STACK_MODE;
-            values[0] = walk->rect.x;
+            values[0] = walk->rect.x + width_spacing;
             if (config.position == POS_TOP)
                 values[1] = walk->rect.y;
             else
                 values[1] = walk->rect.y + walk->rect.h - bar_height;
-            values[2] = walk->rect.w;
+            values[2] = walk->rect.w - 2 * width_spacing;
             values[3] = bar_height;
             values[4] = XCB_STACK_MODE_ABOVE;
 
@@ -1853,7 +1855,7 @@ void reconfig_windows(bool redraw_bars) {
                                                                     depth,
                                                                     walk->buffer.id,
                                                                     walk->bar.id,
-                                                                    walk->rect.w,
+                                                                    walk->rect.w - 2 * width_spacing,
                                                                     bar_height);
 
             DLOG("Recreating statusline buffer for output %s\n", walk->name);
@@ -1861,15 +1863,15 @@ void reconfig_windows(bool redraw_bars) {
                                                                       depth,
                                                                       walk->statusline_buffer.id,
                                                                       walk->bar.id,
-                                                                      walk->rect.w,
+                                                                      walk->rect.w - 2 * width_spacing,
                                                                       bar_height);
 
             draw_util_surface_free(xcb_connection, &(walk->bar));
             draw_util_surface_free(xcb_connection, &(walk->buffer));
             draw_util_surface_free(xcb_connection, &(walk->statusline_buffer));
-            draw_util_surface_init(xcb_connection, &(walk->bar), walk->bar.id, NULL, walk->rect.w, bar_height);
-            draw_util_surface_init(xcb_connection, &(walk->buffer), walk->buffer.id, NULL, walk->rect.w, bar_height);
-            draw_util_surface_init(xcb_connection, &(walk->statusline_buffer), walk->statusline_buffer.id, NULL, walk->rect.w, bar_height);
+            draw_util_surface_init(xcb_connection, &(walk->bar), walk->bar.id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
+            draw_util_surface_init(xcb_connection, &(walk->buffer), walk->buffer.id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
+            draw_util_surface_init(xcb_connection, &(walk->statusline_buffer), walk->statusline_buffer.id, NULL, walk->rect.w - 2 * width_spacing, bar_height);
 
             xcb_void_cookie_t map_cookie, umap_cookie;
             if (redraw_bars) {
@@ -2029,7 +2031,7 @@ void draw_bars(bool unhide) {
 
             int tray_width = get_tray_width(outputs_walk->trayclients);
             uint32_t hoff = logical_px(((workspace_width > 0) + (tray_width > 0)) * sb_hoff_px);
-            uint32_t max_statusline_width = outputs_walk->rect.w - workspace_width - tray_width - hoff;
+            uint32_t max_statusline_width = outputs_walk->rect.w - workspace_width - tray_width - hoff - 2 * width_spacing;
             uint32_t clip_left = 0;
             uint32_t statusline_width = full_statusline_width;
             bool use_short_text = false;
@@ -2043,7 +2045,7 @@ void draw_bars(bool unhide) {
             }
 
             int16_t visible_statusline_width = MIN(statusline_width, max_statusline_width);
-            int x_dest = outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px) - visible_statusline_width;
+            int x_dest = outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px) - visible_statusline_width - 2 * width_spacing;
 
             draw_statusline(outputs_walk, clip_left, use_focus_colors, use_short_text);
             draw_util_copy_surface(&outputs_walk->statusline_buffer, &outputs_walk->buffer, 0, 0,
@@ -2078,7 +2080,7 @@ void redraw_bars(void) {
         }
 
         draw_util_copy_surface(&(outputs_walk->buffer), &(outputs_walk->bar), 0, 0,
-                               0, 0, outputs_walk->rect.w, outputs_walk->rect.h);
+                               0, 0, outputs_walk->rect.w - 2 * width_spacing, outputs_walk->rect.h);
         xcb_flush(xcb_connection);
     }
 }
